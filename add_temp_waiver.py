@@ -8,10 +8,10 @@ from urllib.parse import quote
 from pathlib import Path
 from collections import Counter
 
-# Disable SSL warnings for insecure/self-signed certs
+# Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- Configuration ---
+# Configuration
 NEXUS_IQ_URL = os.getenv("NEXUS_IQ_URL", "https://your-nexus-iq-server.com")
 IQ_USERNAME = os.getenv("NEXUS_IQ_USERNAME", "admin")
 IQ_PASSWORD = os.getenv("NEXUS_IQ_PASSWORD", "admin123")
@@ -25,13 +25,20 @@ def get_application_id(project_name, verify_ssl):
     print("[INFO] Looking up application by publicId:", project_name)
     url = f"{NEXUS_IQ_URL}/api/v2/applications?publicId={quote(project_name)}"
     response = requests.get(url, auth=(IQ_USERNAME, IQ_PASSWORD), headers=HEADERS, verify=verify_ssl)
-    
+
     if response.status_code == 404:
         raise ValueError(f"[ERROR] Project '{project_name}' not found in Nexus IQ.")
     response.raise_for_status()
 
-    app = response.json()
-    app_id = app.get("id")
+    data = response.json()
+    applications = data.get("applications")
+    if not applications:
+        raise ValueError(f"[ERROR] No applications found for publicId '{project_name}'")
+
+    app_id = applications[0].get("id")
+    if not app_id:
+        raise ValueError(f"[ERROR] 'id' missing in application object for project '{project_name}'")
+
     print("[INFO] Found application ID:", app_id)
     return app_id
 
