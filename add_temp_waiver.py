@@ -88,7 +88,6 @@ def get_security_policy_violations(application_public_id, report_id, verify_ssl)
                     "displayName": comp_name,
                     "packageUrl": comp.get("packageUrl")
                 }
-                vio["componentIdentifier"] = comp.get("componentIdentifier")
                 security_violations.append(vio)
 
     print("[INFO] Security violations found:", len(security_violations))
@@ -115,13 +114,8 @@ def write_csv_report(filename, rows):
 def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=False, verify_ssl=True):
     component = violation.get("component", {})
     component_name = component.get("displayName", "Unknown")
-    component_identifier = violation.get("componentIdentifier")
     violation_id = violation.get("policyViolationId")
     policy_name = violation.get("policyName")
-
-    if not component_identifier:
-        print("[WARN] Skipping component with missing componentIdentifier.")
-        return (project_name, component_name, policy_name, violation_id, "N/A", "skipped", execution_time)
 
     expiry_date = (datetime.datetime.utcnow() + datetime.timedelta(days=expiry_days)).strftime('%Y-%m-%d')
     reason = f"Temporary security waiver for {expiry_days} days"
@@ -136,9 +130,8 @@ def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=Fal
         return (project_name, component_name, policy_name, violation_id, expiry_date, "dry-run", execution_time)
 
     waiver_data = {
-        "componentIdentifier": component_identifier,
         "policyViolationId": violation_id,
-        "reason": reason,
+        "comment": reason,
         "expiresOn": expiry_date
     }
 
