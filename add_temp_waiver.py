@@ -20,7 +20,6 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-
 def get_application_id(project_name, verify_ssl):
     print("[INFO] Looking up application by publicId:", project_name)
     url = f"{NEXUS_IQ_URL}/api/v2/applications?publicId={quote(project_name)}"
@@ -42,7 +41,6 @@ def get_application_id(project_name, verify_ssl):
     print("[INFO] Found application ID:", app_id)
     return app_id
 
-
 def get_latest_report_id(application_id, verify_ssl):
     print("[INFO] Fetching latest report for application ID:", application_id)
     url = f"{NEXUS_IQ_URL}/api/v2/reports/applications/{quote(application_id)}"
@@ -57,7 +55,6 @@ def get_latest_report_id(application_id, verify_ssl):
     print("[INFO] Latest report ID:", report_id)
     return report_id
 
-
 def get_security_policy_violations(application_public_id, report_id, verify_ssl):
     print("[INFO] Fetching policy data for report:", report_id)
     url = f"{NEXUS_IQ_URL}/api/v2/applications/{quote(application_public_id)}/reports/{quote(report_id)}/policy"
@@ -68,12 +65,24 @@ def get_security_policy_violations(application_public_id, report_id, verify_ssl)
     print("[INFO] Total components returned:", len(components))
 
     security_violations = []
-    for comp in components:
+
+    for i, comp in enumerate(components):
+        if not comp:
+            print(f"[WARN] Skipping null component at index {i}")
+            continue
+
         comp_hash = comp.get("hash")
-        comp_name = comp.get("componentIdentifier", {}).get("coordinates", {}).get("packageId") \
-            or comp.get("displayName", "unknown")
-        for vio in comp.get("policyViolations", []):
-            if vio.get("threatCategory", "").upper() == "SECURITY":
+        comp_name = comp.get("displayName") or comp.get("packageUrl") or f"Component {i}"
+
+        violations = comp.get("violations")
+        if not violations:
+            continue
+
+        for vio in violations:
+            if not vio:
+                continue
+
+            if vio.get("policyThreatCategory", "").upper() == "SECURITY":
                 vio["component"] = {
                     "hash": comp_hash,
                     "displayName": comp_name
@@ -82,7 +91,6 @@ def get_security_policy_violations(application_public_id, report_id, verify_ssl)
 
     print("[INFO] Security violations found:", len(security_violations))
     return security_violations
-
 
 def write_csv_report(filename, rows):
     file_exists = Path(filename).exists()
@@ -101,7 +109,6 @@ def write_csv_report(filename, rows):
             ])
         writer.writerows(rows)
     print("[INFO] Waiver report successfully written to:", filename)
-
 
 def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=False, verify_ssl=True):
     component = violation.get("component", {})
@@ -137,7 +144,6 @@ def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=Fal
         print("[ERROR] Failed to add waiver:", response.status_code, "-", response.text)
         return (project_name, component_name, policy_name, violation_id, expiry_date, "failed", execution_time)
 
-
 def summarize_actions(report_rows):
     print("\n[SUMMARY] Waiver processing results:")
     counter = Counter(row[5] for row in report_rows)
@@ -145,7 +151,6 @@ def summarize_actions(report_rows):
     for status in ["waived", "already exists", "dry-run", "failed"]:
         print(f"  {status:<15}: {counter.get(status, 0)}")
     print(f"  {'total':<15}: {total}")
-
 
 def main():
     parser = argparse.ArgumentParser(description="Add waivers to Nexus IQ security violations")
@@ -173,7 +178,14 @@ def main():
         else:
             for index, violation in enumerate(security_violations, start=1):
                 print("[INFO] Processing violation", index, "of", len(security_violations))
-                result_row = add_waiver(args.project_name, violation, args.days, execution_time, dry_run=args.dry_run, verify_ssl=verify_ssl)
+                result_row = add_waiver(
+                    args.project_name,
+                    violation,
+                    args.days,
+                    execution_time,
+                    dry_run=args.dry_run,
+                    verify_ssl=verify_ssl
+                )
                 if result_row:
                     report_rows.append(result_row)
 
@@ -183,7 +195,6 @@ def main():
 
     except Exception as e:
         print("[ERROR]", e)
-
 
 if __name__ == "__main__":
     main()
