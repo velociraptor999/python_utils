@@ -117,35 +117,33 @@ def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=Fal
     violation_id = violation.get("policyViolationId")
     policy_name = violation.get("policyName")
 
-    expiry_date = (datetime.datetime.utcnow() + datetime.timedelta(days=expiry_days)).strftime('%Y-%m-%d')
+    expiry_timestamp = (datetime.datetime.utcnow() + datetime.timedelta(days=expiry_days)).strftime('%Y-%m-%dT%H:%M:%S.000+0000')
     reason = f"Temporary security waiver for {expiry_days} days"
-
-    app_id = get_application_id(project_name, verify_ssl)
-    url = f"{NEXUS_IQ_URL}/api/v2/policyWaivers/application/{quote(app_id)}/componentWaivers"
 
     print("[INFO] Processing waiver for component:", component_name, "| policy:", policy_name)
 
     if dry_run:
-        print("[DRY-RUN] Would add waiver (expires", expiry_date + ")")
-        return (project_name, component_name, policy_name, violation_id, expiry_date, "dry-run", execution_time)
+        print("[DRY-RUN] Would add waiver (expires", expiry_timestamp + ")")
+        return (project_name, component_name, policy_name, violation_id, expiry_timestamp, "dry-run", execution_time)
+
+    url = f"{NEXUS_IQ_URL}/api/v2/policyWaivers/application/{quote(project_name)}/{quote(violation_id)}"
 
     waiver_data = {
-        "policyViolationId": violation_id,
         "comment": reason,
-        "expiresOn": expiry_date
+        "expiryTime": expiry_timestamp
     }
 
     response = requests.post(url, json=waiver_data, auth=(IQ_USERNAME, IQ_PASSWORD), headers=HEADERS, verify=verify_ssl)
 
     if response.status_code == 201:
-        print("[INFO] Waiver added (expires", expiry_date + ")")
-        return (project_name, component_name, policy_name, violation_id, expiry_date, "waived", execution_time)
+        print("[INFO] Waiver added (expires", expiry_timestamp + ")")
+        return (project_name, component_name, policy_name, violation_id, expiry_timestamp, "waived", execution_time)
     elif response.status_code == 409:
         print("[INFO] Waiver already exists – skipping")
-        return (project_name, component_name, policy_name, violation_id, expiry_date, "already exists", execution_time)
+        return (project_name, component_name, policy_name, violation_id, expiry_timestamp, "already exists", execution_time)
     else:
         print("[ERROR] Failed to add waiver:", response.status_code, "-", response.text)
-        return (project_name, component_name, policy_name, violation_id, expiry_date, "failed", execution_time)
+        return (project_name, component_name, policy_name, violation_id, expiry_timestamp, "failed", execution_time)
 
 def summarize_actions(report_rows):
     print("\n[SUMMARY] Waiver processing results:")
