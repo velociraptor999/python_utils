@@ -85,8 +85,10 @@ def get_security_policy_violations(application_public_id, report_id, verify_ssl)
             if vio.get("policyThreatCategory", "").upper() == "SECURITY":
                 vio["component"] = {
                     "hash": comp_hash,
-                    "displayName": comp_name
+                    "displayName": comp_name,
+                    "packageUrl": comp.get("packageUrl")
                 }
+                vio["componentIdentifier"] = comp.get("componentIdentifier")
                 security_violations.append(vio)
 
     print("[INFO] Security violations found:", len(security_violations))
@@ -112,15 +114,20 @@ def write_csv_report(filename, rows):
 
 def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=False, verify_ssl=True):
     component = violation.get("component", {})
-    component_hash = component.get("hash")
     component_name = component.get("displayName", "Unknown")
+    component_identifier = violation.get("componentIdentifier")
     violation_id = violation.get("policyViolationId")
     policy_name = violation.get("policyName")
+
+    if not component_identifier:
+        print("[WARN] Skipping component with missing componentIdentifier.")
+        return (project_name, component_name, policy_name, violation_id, "N/A", "skipped", execution_time)
 
     expiry_date = (datetime.datetime.utcnow() + datetime.timedelta(days=expiry_days)).strftime('%Y-%m-%d')
     reason = f"Temporary security waiver for {expiry_days} days"
 
-    url = f"{NEXUS_IQ_URL}/api/v2/policyWaivers/component/{quote(component_hash)}/violations/{quote(violation_id)}"
+    app_id = get_application_id(project_name, verify_ssl)
+    url = f"{NEXUS_IQ_URL}/api/v2/policyWaivers/application/{quote(app_id)}/componentWaivers"
 
     print("[INFO] Processing waiver for component:", component_name, "| policy:", policy_name)
 
@@ -129,11 +136,14 @@ def add_waiver(project_name, violation, expiry_days, execution_time, dry_run=Fal
         return (project_name, component_name, policy_name, violation_id, expiry_date, "dry-run", execution_time)
 
     waiver_data = {
+        "componentIdentifier": component_identifier,
+        "policyViolationId": violation_id,
         "reason": reason,
         "expiresOn": expiry_date
     }
 
     response = requests.post(url, json=waiver_data, auth=(IQ_USERNAME, IQ_PASSWORD), headers=HEADERS, verify=verify_ssl)
+
     if response.status_code == 201:
         print("[INFO] Waiver added (expires", expiry_date + ")")
         return (project_name, component_name, policy_name, violation_id, expiry_date, "waived", execution_time)
@@ -148,7 +158,7 @@ def summarize_actions(report_rows):
     print("\n[SUMMARY] Waiver processing results:")
     counter = Counter(row[5] for row in report_rows)
     total = len(report_rows)
-    for status in ["waived", "already exists", "dry-run", "failed"]:
+    for status in ["waived", "already exists", "dry-run", "skipped", "failed"]:
         print(f"  {status:<15}: {counter.get(status, 0)}")
     print(f"  {'total':<15}: {total}")
 
